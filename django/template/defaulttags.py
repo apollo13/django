@@ -813,7 +813,7 @@ class TemplateLiteral(Literal):
         return self.text
 
     def eval(self, context):
-        return self.value.resolve(context, ignore_failures=True)
+        return self.value.resolve(context, ignore_failures=False)
 
 class TemplateIfParser(IfParser):
     error_class = TemplateSyntaxError
