@@ -169,14 +169,41 @@ the sites framework is installed) or a RequestSite instance (if it is not).
 This allows loose coupling with the sites framework and provides a usable
 fallback for cases where it is not installed.
 
+.. versionchanged:: 1.5
+
+Since 1.5 the behavior of :func:`~django.contrib.sites.models.get_current_site`
+can be changed by setting :setting:`settings.SITE_RESOLVER` to a fully-qualified
+path of a function taking the request as argument. The function should return
+a :class:`~django.contrib.sites.models.Site` object or a
+:class:`~django.contrib.sites.models.RequestSite` object and could lookup `Site`
+objects from the database based on the current request. This allows users to
+implement multitenancy as long as
+:func:`~django.contrib.sites.models.get_current_site` is used everywhere in the
+code.
+
+.. admonition:: Using a custom SITE_RESOLVER and SITE_ID
+
+    The default implementation of
+    :func:`~django.contrib.sites.models.get_current_site` requires
+    :setting:`settings.SITE_ID` to be set if the sites framework
+    is in :setting:`settings.INSTALLED_APPS`. If your own implementation does
+    not require :setting:`settings.SITE_ID` (for instance if you look up the
+    site based on the request) it is possible to remove it completly from
+    ``settings.py``. Keep in mind that legacy applications still might require
+    :setting:`settings.SITE_ID` to be present, in that case it probably should
+    match the default site of the project.
+
 .. versionadded:: 1.3
 
 .. function:: get_current_site(request)
 
-    Checks if contrib.sites is installed and returns either the current
-    :class:`~django.contrib.sites.models.Site` object or a 
-    :class:`~django.contrib.sites.models.RequestSite` object based on
-    the request.
+    Returns the current site based on the value of
+    :setting:`settings.SITE_RESOLVER`. If not defined it checks if
+    contrib.sites is installed and returns either the current
+    :class:`~django.contrib.sites.models.Site` object or a
+    :class:`~django.contrib.sites.models.RequestSite` object based
+    on the request.
+
 
 Getting the current domain for display
 --------------------------------------
@@ -437,7 +464,7 @@ fallback when the database-backed sites framework is not available.
 
         Sets the ``name`` and ``domain`` attributes to the value of
         :meth:`~django.http.HttpRequest.get_host`.
-        
+
 
 A :class:`~django.contrib.sites.models.RequestSite` object has a similar
 interface to a normal :class:`~django.contrib.sites.models.Site` object, except

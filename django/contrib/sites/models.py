@@ -83,7 +83,7 @@ class RequestSite(object):
         raise NotImplementedError('RequestSite cannot be deleted.')
 
 
-def get_current_site(request):
+def default_get_current_site(request):
     """
     Checks if contrib.sites is installed and returns either the current
     ``Site`` object or a ``RequestSite`` object based on the request.
@@ -93,3 +93,21 @@ def get_current_site(request):
     else:
         current_site = RequestSite(request)
     return current_site
+
+
+def get_current_site(request):
+    """
+    Returns the current site based on the value of the SITE_RESOLVER
+    setting. If not defined it checks if contrib.sites is installed
+    and returns either the current ``Site`` object or a
+    ``RequestSite`` object based on the request.
+    """
+    if get_current_site.SITE_RESOLVER is None:
+        from django.conf import settings
+        from django.utils.importlib import import_module
+        mod_path, func_name = settings.SITE_RESOLVER.rsplit('.', 1)
+        get_current_site.SITE_RESOLVER = getattr(import_module(mod_path),
+            func_name)
+    return get_current_site.SITE_RESOLVER(request)
+get_current_site.SITE_RESOLVER = None
+

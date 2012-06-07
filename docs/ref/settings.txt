@@ -1822,6 +1822,19 @@ See :doc:`/ref/contrib/sites`.
 
 .. _site framework docs: ../sites/
 
+.. setting:: SITE_RESOLVER
+
+SITE_RESOLVER
+-------------
+
+.. versionadded:: 1.5
+
+Default: 'django.contrib.sites.models.default_get_current_site'
+
+A fully-qualified path to a function taking a ``request`` object and returning
+a ``Site`` object, this is used by
+:func:`~django.contrib.sites.models.get_current_site` if set.
+
 .. setting:: STATIC_ROOT
 
 STATIC_ROOT

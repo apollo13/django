@@ -428,6 +428,9 @@ WSGI_APPLICATION = None
 # you may be opening yourself up to a security risk.
 SECURE_PROXY_SSL_HEADER = None
 
+# Default site resolving function
+SITE_RESOLVER = 'django.contrib.sites.models.default_get_current_site'
+
 ##############
 # MIDDLEWARE #
 ##############

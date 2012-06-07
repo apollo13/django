@@ -5,6 +5,7 @@ from django.contrib.sites.models import Site, RequestSite, get_current_site
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpRequest
 from django.test import TestCase
+from django.test.utils import override_settings
 
 
 class SitesFrameworkTests(TestCase):
@@ -62,3 +63,16 @@ class SitesFrameworkTests(TestCase):
         site = get_current_site(request)
         self.assertTrue(isinstance(site, RequestSite))
         self.assertEqual(site.name, "example.com")
+
+    def test_custom_site_resolver(self):
+        request = HttpRequest()
+
+        get_current_site.SITE_RESOLVER = None
+
+        with override_settings(SITE_RESOLVER='django.contrib.sites.tests.test_resolver'):
+            self.assertEquals(get_current_site(request), 'custom resolver')
+
+        get_current_site.SITE_RESOLVER = None
+
+
+test_resolver = lambda request: 'custom resolver'

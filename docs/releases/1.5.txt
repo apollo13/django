@@ -92,6 +92,10 @@ Django 1.5 also includes several smaller improvements worth noting:
 * In the localflavor for Canada, "pq" was added to the acceptable codes for
   Quebec. It's an old abbreviation.
 
+* :setting:`settings.SITE_RESOLVER` can be used to specify a replacement for
+  :func:`~django.contrib.sites.models.get_current_site`. This allows to serve
+  more than one site from a single Django instance (also called multitenancy).
+
 Backwards incompatible changes in 1.5
 =====================================
 
