@@ -1,7 +1,10 @@
 import os
+
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.storage import default_storage, Storage, FileSystemStorage
+from django.dispatch import receiver
+from django.test.signals import setting_changed
 from django.utils.datastructures import SortedDict
 from django.utils.functional import empty, memoize, LazyObject
 from django.utils.importlib import import_module
@@ -11,6 +14,12 @@ from django.contrib.staticfiles import utils
 from django.contrib.staticfiles.storage import AppStaticStorage
 
 _finders = SortedDict()
+
+
+@receiver(setting_changed)
+def reset_finders(**kwargs):
+    if kwargs['setting'].startswith('STATICFILES_'):
+        _finders.clear()
 
 
 class BaseFinder(object):
