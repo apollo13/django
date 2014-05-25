@@ -245,6 +245,13 @@ class HttpRequest(object):
         else:
             self._post, self._files = QueryDict('', encoding=self._encoding), MultiValueDict()
 
+    def close(self):
+        if hasattr(self, '_files'):
+            for l in self._files.lists():
+                for f in l[1]:
+                    if not getattr(f, 'closed', False):
+                        f.close()
+
     # File-like and iterator interface.
     #
     # Expects self._stream to be set to an appropriate source of bytes by
