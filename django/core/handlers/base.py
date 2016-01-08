@@ -215,15 +215,9 @@ class BaseHandler(object):
 
         wrapped_callback = self.make_view_atomic(callback)
 
-        # TODO: It would be nice if we could move the try/except in _get_response_old,
-        # but that would break semantics.
-        try:
-            response = wrapped_callback(request, *callback_args, **callback_kwargs)
-        except Exception as e:
-            response = self.process_exception_by_middleware(e, request)
+        response = wrapped_callback(request, *callback_args, **callback_kwargs)
 
         # Complain if the view returned None (a common error).
-        # TODO: New style middlewares will actually be able to handle that, good or not?!
         if response is None:
             if isinstance(callback, types.FunctionType):    # FBV
                 view_name = callback.__name__
@@ -239,17 +233,12 @@ class BaseHandler(object):
             for middleware_method in self._template_response_middleware:
                 response = middleware_method(request, response)
                 # Complain if the template response middleware returned None (a common error).
-                # TODO: See TODOs above this one.
                 if response is None:
                     raise ValueError("%s.process_template_response didn't return an "
                         "HttpResponse object. It returned None instead."
                         % (middleware_method.__self__.__class__.__name__))
 
-            # TODO: See TODOs above this one.
-            try:
-                response = response.render()
-            except Exception as e:
-                response = self.process_exception_by_middleware(e, request)
+            response = response.render()
 
         return response
 
@@ -329,7 +318,10 @@ class BaseHandler(object):
                 break
 
         if response is None:
-            response = self._get_response(request)
+            try:
+                response = self._get_response(request)
+            except Exception as e:
+                response = self.process_exception_by_middleware(e, request)
         return response
 
     def _load_middleware_old(self):
