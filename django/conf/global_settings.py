@@ -427,7 +427,7 @@ MIDDLEWARE_CLASSES = [
     'django.middleware.csrf.CsrfViewMiddleware',
 ]
 
-MIDDLEWARES = None
+MIDDLEWARE = None
 
 ############
 # SESSIONS #
