@@ -1,6 +1,7 @@
 "This is the locale selecting middleware that will look at accept headers"
 
 from django.conf import settings
+from django.core.handlers.middleware import MiddlewareMixin
 from django.http import HttpResponseRedirect
 from django.urls import (
     LocaleRegexURLResolver, get_resolver, get_script_prefix, is_valid_path,
@@ -10,7 +11,7 @@ from django.utils.cache import patch_vary_headers
 from django.utils.functional import cached_property
 
 
-class LocaleMiddleware(object):
+class LocaleMiddleware(MiddlewareMixin):
     """
     This is a very simple middleware that parses a request
     and decides what translation object to install in the current
