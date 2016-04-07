@@ -56,6 +56,7 @@ class CursorWrapper(object):
                 return self.cursor.callproc(procname, params)
 
     def execute(self, sql, params=None):
+        print(sql)
         self.db.validate_no_broken_transaction()
         with self.db.wrap_database_errors:
             if params is None:

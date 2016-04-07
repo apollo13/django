@@ -1,60 +1,46 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
-import datetime
 
 from django.contrib.auth.models import User
-from django.test import TestCase, override_settings
-from django.urls import reverse
+from django.test import TestCase
 
 from .models import (
     Section, Article, PrePopulatedPost, Color, Fabric, Book, Promo, Chapter, ChapterXtra1,
     Employee, Person, WorkHour, AdminOrderedCallable, Post, Language, Actor, Podcast, UndeletableObject,
     ComplexSortedPerson, UnchangeableObject
 )
+from django.db import connection
+from django.db.transaction import atomic, set_rollback
 
 
-@override_settings(ROOT_URLCONF='admin_views.urls')
 class AdminViewBasicTest(TestCase):
 
-    def test_basic_edit_POST(self):
-        s1 = Section.objects.create()
-        a1 = Article.objects.create(section=s1)
+    def test_1(self):
+        c = connection.cursor()
 
+        c.execute('INSERT INTO "admin_views_section" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_article" ("section_id", "another_section_id", "sub_section_id") VALUES (1, NULL, NULL)')
+        c.execute('INSERT INTO "admin_views_book" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_chapter" ("book_id") VALUES (1)')
+        c.execute('INSERT INTO "admin_views_prepopulatedpost" ("slug") VALUES (1)')
+        c.execute('INSERT INTO "admin_views_color" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_fabric" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_promo" ("book_id") VALUES (1)')
+        c.execute('INSERT INTO "admin_views_chapterxtra1" ("chap_id") VALUES (1)')
+        c.execute('INSERT INTO "auth_user" ("password", "last_login", "is_superuser", "username", "first_name", "last_name", "email", "is_staff", "is_active", "date_joined") VALUES (1, NULL, 0, 1, 1, 1, 1, 0, 1, 1)')
+        c.execute('INSERT INTO "django_session" ("session_key", "session_data", "expire_date") SELECT 1, 1, 1')
+        c.execute('INSERT INTO "django_admin_log" ("action_time", "user_id", "content_type_id", "object_id", "object_repr", "action_flag", "change_message") VALUES (1, 1, 21, 1, 1, 2, 1)')
+        c.execute('INSERT INTO "admin_views_person" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_language" ("iso") VALUES (1)')
+        c.execute('INSERT INTO "admin_views_media" ("name") VALUES (1)')
+        c.execute('INSERT INTO "admin_views_podcast" ("media_ptr_id") SELECT 1')
+        c.execute('INSERT INTO "admin_views_complexsortedperson" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_employee" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_workhour" ("employee_id") VALUES (1)')
+        c.execute('INSERT INTO "admin_views_post" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_actor" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_undeletableobject" ("id") VALUES (NULL)')
+        c.execute('INSERT INTO "admin_views_unchangeableobject" ("id") VALUES (NULL)')
 
-        b1 = Book.objects.create()
-        chap1 = Chapter.objects.create(book=b1)
-        PrePopulatedPost.objects.create()
-        Color.objects.create()
-        Fabric.objects.create()
-        Promo.objects.create(book=b1)
-        ChapterXtra1.objects.create(chap=chap1)
-
-        url = reverse('admin:admin_views_section_change', args=(s1.pk,))
-        superuser = User.objects.create_superuser(username='super', password='s', email='s@e')
-        self.client.force_login(superuser)
-        inline_post_data = {
-            "name": "Test section",
-            # inline data
-            "article_set-TOTAL_FORMS": "1",
-            "article_set-INITIAL_FORMS": "1",
-            "article_set-MAX_NUM_FORMS": "0",
-            "article_set-0-id": a1.pk,
-            "article_set-0-section": s1.pk,
-        }
-        self.client.post(url, inline_post_data)
-        Person.objects.create()
-        Language.objects.create(iso='ar')
-        Podcast.objects.create()
-        ComplexSortedPerson.objects.create()
-
-    def test_sort_indicators_admin_order(self):
-        AdminOrderedCallable.objects.create()
-
-    def test_popup_dismiss_related(self):
-        e1 = Employee.objects.create()
-        WorkHour.objects.create(employee=e1)
-        Post.objects.create()
-        Actor.objects.create()
-        UndeletableObject.objects.create()
-        UnchangeableObject.objects.create()
+    def test_2(self):
+        c = connection.cursor()
+        c.execute('INSERT INTO "admin_views_adminorderedcallable" ("id") VALUES (NULL)')
