@@ -33,7 +33,7 @@ class Tag(models.Model):
 
 
 class Thing(models.Model):
-    name = models.CharField(max_length=256)
+    name = models.CharField(max_length=255)
     tags = models.ManyToManyField(Tag)
 
 
