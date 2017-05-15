@@ -721,7 +721,7 @@ class PrePopulatedPostLargeSlug(models.Model):
     title = models.CharField(max_length=100)
     published = models.BooleanField(default=False)
     # `db_index=False` because MySQL cannot index large CharField (#21196).
-    slug = models.SlugField(max_length=255, db_index=False)
+    slug = models.SlugField(max_length=1000, db_index=False)
 
 
 class AdminOrderedField(models.Model):
