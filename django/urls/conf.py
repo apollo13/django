@@ -54,7 +54,7 @@ def include(arg, namespace=None):
     return (urlconf_module, app_name, namespace)
 
 
-def _path(route, view, kwargs=None, name=None, Pattern=None):
+def _path(route, view, kwargs=None, name=None, methods=None, Pattern=None):
     if isinstance(view, (list, tuple)):
         # For include(...) processing.
         pattern = Pattern(route, is_endpoint=False)
@@ -67,7 +67,7 @@ def _path(route, view, kwargs=None, name=None, Pattern=None):
             namespace=namespace,
         )
     elif callable(view):
-        pattern = Pattern(route, name=name, is_endpoint=True)
+        pattern = Pattern(route, name=name, methods=methods, is_endpoint=True)
         return URLPattern(pattern, view, kwargs, name)
     else:
         raise TypeError('view must be a callable or a list/tuple in the case of include().')

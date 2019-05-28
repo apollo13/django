@@ -97,7 +97,13 @@ class BaseHandler:
         else:
             resolver = get_resolver()
 
-        resolver_match = resolver.resolve(request.path_info)
+        scope = {
+            "path": request.path_info,
+            "remaining_path": request.path_info,
+            "method": request.method
+        }
+
+        resolver_match = resolver.resolve(scope)
         callback, callback_args, callback_kwargs = resolver_match
         request.resolver_match = resolver_match
 

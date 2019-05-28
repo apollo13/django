@@ -139,14 +139,19 @@ class CheckURLMixin:
 class RegexPattern(CheckURLMixin):
     regex = LocaleRegexDescriptor('_regex')
 
-    def __init__(self, regex, name=None, is_endpoint=False):
+    def __init__(self, regex, name=None, methods=None, is_endpoint=False):
         self._regex = regex
         self._regex_dict = {}
         self._is_endpoint = is_endpoint
         self.name = name
+        self.methods = methods
         self.converters = {}
 
-    def match(self, path):
+    def match(self, scope):
+        method = scope.get("method")
+        if all([self.methods, method]) and method not in self.methods:
+            return
+        path = scope.get("remaining_path")
         match = self.regex.search(path)
         if match:
             # If there are any named groups, use those as kwargs, ignoring
@@ -237,14 +242,19 @@ def _route_to_regex(route, is_endpoint=False):
 class RoutePattern(CheckURLMixin):
     regex = LocaleRegexDescriptor('_route')
 
-    def __init__(self, route, name=None, is_endpoint=False):
+    def __init__(self, route, name=None, methods=None, is_endpoint=False):
         self._route = route
         self._regex_dict = {}
         self._is_endpoint = is_endpoint
         self.name = name
+        self.methods = methods
         self.converters = _route_to_regex(str(route), is_endpoint)[1]
 
-    def match(self, path):
+    def match(self, scope):
+        method = scope.get("method")
+        if all([self.methods, method]) and method not in self.methods:
+            return
+        path = scope.get("remaining_path")
         match = self.regex.search(path)
         if match:
             # RoutePattern doesn't allow non-named groups so args are ignored.
@@ -340,8 +350,8 @@ class URLPattern:
         else:
             return []
 
-    def resolve(self, path):
-        match = self.pattern.match(path)
+    def resolve(self, scope):
+        match = self.pattern.match(scope)
         if match:
             new_path, args, kwargs = match
             # Pass any extra_kwargs as **kwargs.
@@ -526,15 +536,19 @@ class URLResolver:
             self._populate()
         return name in self._callback_strs
 
-    def resolve(self, path):
-        path = str(path)  # path may be a reverse_lazy object
+    def resolve(self, scope):
+        # First try at backwards compat
+        if isinstance(scope, str):
+            scope = {"path": scope, "remaining_path": scope}
+        path = str(scope.get("remaining_path"))  # path may be a reverse_lazy object
         tried = []
-        match = self.pattern.match(path)
+        match = self.pattern.match(scope)
         if match:
             new_path, args, kwargs = match
+            new_scope = dict(scope, remaining_path=new_path)
             for pattern in self.url_patterns:
                 try:
-                    sub_match = pattern.resolve(new_path)
+                    sub_match = pattern.resolve(new_scope)
                 except Resolver404 as e:
                     sub_tried = e.args[0].get('tried')
                     if sub_tried is not None:
