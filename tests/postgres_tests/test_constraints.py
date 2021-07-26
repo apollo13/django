@@ -1,6 +1,7 @@
 import datetime
 from unittest import mock
 
+from django.conf import settings
 from django.contrib.postgres.indexes import OpClass
 from django.db import IntegrityError, NotSupportedError, connection, transaction
 from django.db.models import (
@@ -926,6 +927,8 @@ class ExclusionConstraintTests(PostgreSQLTestCase):
             "Covering exclusion constraints using a GiST index require "
             "PostgreSQL 12+."
         )
+        dbmodule = settings.DATABASES[DEFAULT_DB_ALIAS]["ENGINE"]
+
         with connection.schema_editor() as editor:
             with mock.patch(
                 "django.db.backends.postgresql.features.DatabaseFeatures."
