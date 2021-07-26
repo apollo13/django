@@ -164,7 +164,7 @@ class Tests(TestCase):
         settings["NAME"] = None
         settings["OPTIONS"] = {"service": "django_test"}
         params = DatabaseWrapper(settings).get_connection_params()
-        self.assertEqual(params["database"], "postgres")
+        self.assertEqual(params["dbname"], "postgres")
         self.assertNotIn("service", params)
 
     def test_connect_and_rollback(self):
@@ -218,11 +218,13 @@ class Tests(TestCase):
         finally:
             new_connection.close()
 
-    def test_connect_isolation_level(self):
+    def test_connect_isolation_level_psycopg2(self):
         """
         The transaction level can be configured with
         DATABASES ['OPTIONS']['isolation_level'].
         """
+        if connection.is_psycopg3:
+            raise unittest.SkipTest("Requires psycopg2")
         from psycopg2.extensions import ISOLATION_LEVEL_SERIALIZABLE as serializable
 
         # Since this is a django.test.TestCase, a transaction is in progress
@@ -241,6 +243,31 @@ class Tests(TestCase):
         finally:
             new_connection.close()
 
+    def test_connect_isolation_level(self):
+        """
+        The transaction level can be configured with
+        DATABASES ['OPTIONS']['isolation_level'].
+        """
+        if not connection.is_psycopg3:
+            raise unittest.SkipTest("Requires psycopg version 3")
+        import psycopg
+
+        self.assertEqual(connection.connection.isolation_level, None)
+
+        new_connection = connection.copy()
+        new_connection.settings_dict["OPTIONS"][
+            "isolation_level"
+        ] = psycopg.IsolationLevel.REPEATABLE_READ
+        try:
+            new_connection.set_autocommit(False)
+            # Check the level on the psycopg2 connection, not the Django wrapper.
+            self.assertEqual(
+                new_connection.connection.isolation_level,
+                psycopg.IsolationLevel.REPEATABLE_READ,
+            )
+        finally:
+            new_connection.close()
+
     def test_connect_no_is_usable_checks(self):
         new_connection = connection.copy()
         try:
@@ -252,7 +279,7 @@ class Tests(TestCase):
 
     def _select(self, val):
         with connection.cursor() as cursor:
-            cursor.execute("SELECT %s", (val,))
+            cursor.execute("SELECT %s::text[]", (val,))
             return cursor.fetchone()[0]
 
     def test_select_ascii_array(self):
@@ -292,15 +319,20 @@ class Tests(TestCase):
                     )
 
     def test_correct_extraction_psycopg2_version(self):
-        from django.db.backends.postgresql.base import psycopg2_version
+        import_name = (
+            "psycopg.__version__" if connection.is_psycopg3 else "psycopg2.__version__"
+        )
+        from django.db.backends.postgresql.base import psycopg_version
 
-        with mock.patch("psycopg2.__version__", "4.2.1 (dt dec pq3 ext lo64)"):
-            self.assertEqual(psycopg2_version(), (4, 2, 1))
-        with mock.patch("psycopg2.__version__", "4.2b0.dev1 (dt dec pq3 ext lo64)"):
-            self.assertEqual(psycopg2_version(), (4, 2))
+        with mock.patch(import_name, "4.2.1 (dt dec pq3 ext lo64)"):
+            self.assertEqual(psycopg_version(), (4, 2, 1))
+        with mock.patch(import_name, "4.2b0.dev1 (dt dec pq3 ext lo64)"):
+            self.assertEqual(psycopg_version(), (4, 2))
 
     @override_settings(DEBUG=True)
     def test_copy_cursors(self):
+        if connection.is_psycopg3:
+            raise unittest.SkipTest("psycopg2 test")
         out = StringIO()
         copy_expert_sql = "COPY django_session TO STDOUT (FORMAT CSV, HEADER)"
         with connection.cursor() as cursor:
@@ -322,3 +354,14 @@ class Tests(TestCase):
         with self.assertRaisesMessage(NotSupportedError, msg):
             connection.check_database_version_supported()
         self.assertTrue(mocked_get_database_version.called)
+
+    @override_settings(DEBUG=True)
+    def test_copy_cursors_3(self):
+        if not connection.is_psycopg3:
+            raise unittest.SkipTest("psycopg > 2 test")
+        copy_sql = "COPY django_session TO STDOUT (FORMAT CSV, HEADER)"
+        with connection.cursor() as cursor:
+            with cursor.copy(copy_sql) as copy:
+                for row in copy:
+                    pass
+        self.assertEqual([q["sql"] for q in connection.queries], [copy_sql])

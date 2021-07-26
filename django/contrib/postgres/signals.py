@@ -1,22 +1,20 @@
 import functools
 
-import psycopg2
-from psycopg2 import ProgrammingError
-from psycopg2.extras import register_hstore
-
 from django.db import connections
 from django.db.backends.base.base import NO_DB_ALIAS
+from django.db.backends.postgresql.psycopg_any import is_psycopg3
 
 
 @functools.lru_cache
 def get_hstore_oids(connection_alias):
     """Return hstore and hstore array OIDs."""
+    return get_type_oids(connection_alias, "hstore")
+
+
+def get_type_oids(connection_alias, type_name):
     with connections[connection_alias].cursor() as cursor:
         cursor.execute(
-            "SELECT t.oid, typarray "
-            "FROM pg_type t "
-            "JOIN pg_namespace ns ON typnamespace = ns.oid "
-            "WHERE typname = 'hstore'"
+            "SELECT oid, typarray FROM pg_type WHERE typname = %s", (type_name,)
         )
         oids = []
         array_oids = []
@@ -29,22 +27,36 @@ def get_hstore_oids(connection_alias):
 @functools.lru_cache
 def get_citext_oids(connection_alias):
     """Return citext array OIDs."""
-    with connections[connection_alias].cursor() as cursor:
-        cursor.execute("SELECT typarray FROM pg_type WHERE typname = 'citext'")
-        return tuple(row[0] for row in cursor)
+    return get_type_oids(connection_alias, "citext")[1]
 
 
-def register_type_handlers(connection, **kwargs):
-    if connection.vendor != "postgresql" or connection.alias == NO_DB_ALIAS:
-        return
+if is_psycopg3:
+    from psycopg.types import TypeInfo, hstore
 
-    try:
+    def register_type_handlers(connection, **kwargs):
+        if connection.vendor != "postgresql" or connection.alias == NO_DB_ALIAS:
+            return
+
         oids, array_oids = get_hstore_oids(connection.alias)
-        register_hstore(
-            connection.connection, globally=True, oid=oids, array_oid=array_oids
-        )
-    except ProgrammingError:
-        # Hstore is not available on the database.
+        for oid, array_oid in zip(oids, array_oids):
+            ti = TypeInfo("hstore", oid, array_oid)
+            hstore.register_hstore(ti, connection.connection)
+
+        citext_oids = get_citext_oids(connection.alias)
+        for array_oid in citext_oids:
+            ti = TypeInfo("citext", 0, array_oid)
+            ti.register(connection.connection)
+
+else:
+    import psycopg2
+    from psycopg2.extras import register_hstore
+
+    def register_type_handlers(connection, **kwargs):
+        if connection.vendor != "postgresql" or connection.alias == NO_DB_ALIAS:
+            return
+
+        oids, array_oids = get_hstore_oids(connection.alias)
+        # Tolerate the possibility that hstore is not available on the database.
         #
         # If someone tries to create an hstore field it will error there.
         # This is necessary as someone may be using PSQL without extensions
@@ -52,17 +64,18 @@ def register_type_handlers(connection, **kwargs):
         #
         # This is also needed in order to create the connection in order to
         # install the hstore extension.
-        pass
+        if oids:
+            register_hstore(
+                connection.connection, globally=True, oid=oids, array_oid=array_oids
+            )
 
-    try:
         citext_oids = get_citext_oids(connection.alias)
-        array_type = psycopg2.extensions.new_array_type(
-            citext_oids, "citext[]", psycopg2.STRING
-        )
-        psycopg2.extensions.register_type(array_type, None)
-    except ProgrammingError:
-        # citext is not available on the database.
+        # Tolerate the possibility that citext is not available on the database.
         #
         # The same comments in the except block of the above call to
         # register_hstore() also apply here.
-        pass
+        if oids:
+            array_type = psycopg2.extensions.new_array_type(
+                citext_oids, "citext[]", psycopg2.STRING
+            )
+            psycopg2.extensions.register_type(array_type, None)
