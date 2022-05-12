@@ -927,8 +927,6 @@ class ExclusionConstraintTests(PostgreSQLTestCase):
             "Covering exclusion constraints using a GiST index require "
             "PostgreSQL 12+."
         )
-        dbmodule = settings.DATABASES[DEFAULT_DB_ALIAS]["ENGINE"]
-
         with connection.schema_editor() as editor:
             with mock.patch(
                 "django.db.backends.postgresql.features.DatabaseFeatures."
