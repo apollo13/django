@@ -6,7 +6,10 @@ from django.db.backends.base.operations import BaseDatabaseOperations
 from django.db.backends.utils import split_tzname_delta
 from django.db.models.constants import OnConflict
 
-from psycopg.sql import SQL, Literal
+try:
+    from psycopg.sql import SQL, Literal
+except ImportError:
+    from psycopg2.sql import SQL, Literal
 
 
 class DatabaseOperations(BaseDatabaseOperations):
