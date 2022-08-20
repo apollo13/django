@@ -38,8 +38,8 @@ def register_type_handlers(connection, **kwargs):
     if connection.vendor != "postgresql" or connection.alias == NO_DB_ALIAS:
         return
 
+    oids, array_oids = get_hstore_oids(connection.alias)
     try:
-        oids, array_oids = get_hstore_oids(connection.alias)
         register_hstore(connection.connection, oid=oids, array_oid=array_oids)
     except ProgrammingError:
         # Hstore is not available on the database.
@@ -52,8 +52,8 @@ def register_type_handlers(connection, **kwargs):
         # install the hstore extension.
         pass
 
+    citext_oids = get_citext_oids(connection.alias)
     try:
-        citext_oids = get_citext_oids(connection.alias)
         array_type = psycopg2.extensions.new_array_type(
             citext_oids, "citext[]", psycopg2.STRING
         )
