@@ -40,9 +40,7 @@ def register_type_handlers(connection, **kwargs):
 
     try:
         oids, array_oids = get_hstore_oids(connection.alias)
-        register_hstore(
-            connection.connection, globally=True, oid=oids, array_oid=array_oids
-        )
+        register_hstore(connection.connection, oid=oids, array_oid=array_oids)
     except ProgrammingError:
         # Hstore is not available on the database.
         #
@@ -59,7 +57,7 @@ def register_type_handlers(connection, **kwargs):
         array_type = psycopg2.extensions.new_array_type(
             citext_oids, "citext[]", psycopg2.STRING
         )
-        psycopg2.extensions.register_type(array_type, None)
+        psycopg2.extensions.register_type(array_type, connection.connection)
     except ProgrammingError:
         # citext is not available on the database.
         #

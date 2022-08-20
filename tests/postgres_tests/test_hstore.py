@@ -5,6 +5,7 @@ from django.db import connection
 from django.db.models import F, OuterRef, Subquery
 from django.db.models.expressions import RawSQL
 from django.forms import Form
+from django.test import modify_settings
 from django.test.utils import CaptureQueriesContext, isolate_apps
 
 from . import PostgreSQLSimpleTestCase, PostgreSQLTestCase
@@ -19,6 +20,7 @@ except ImportError:
     pass
 
 
+@modify_settings(INSTALLED_APPS={"append": "django.contrib.postgres"})
 class SimpleTests(PostgreSQLTestCase):
     def test_save_load_success(self):
         value = {"a": "b"}
