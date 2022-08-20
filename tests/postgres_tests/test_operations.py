@@ -6,6 +6,7 @@ from django.db import IntegrityError, NotSupportedError, connection, transaction
 from django.db.migrations.state import ProjectState
 from django.db.models import CheckConstraint, Index, Q, UniqueConstraint
 from django.db.utils import ProgrammingError
+from django.dispatch import receiver
 from django.test import modify_settings, override_settings
 from django.test.utils import CaptureQueriesContext
 
@@ -22,6 +23,10 @@ try:
         RemoveCollation,
         RemoveIndexConcurrently,
         ValidateConstraint,
+    )
+    from django.db.backends.postgresql.signals import (
+        extension_created,
+        extension_removed,
     )
 except ImportError:
     pass
@@ -257,6 +262,38 @@ class CreateExtensionTests(PostgreSQLTestCase):
                 )
         self.assertEqual(len(captured_queries), 1)
         self.assertIn("SELECT", captured_queries[0]["sql"])
+
+    def test_drop_with_extension_handlers(self):
+        result = []
+
+        @receiver(extension_created)
+        def create_handler(name, **kwargs):
+            result.append(["create", name])
+
+        @receiver(extension_removed)
+        def drop_handler(name, **kwargs):
+            result.append(["drop", name])
+
+        operation = CreateExtension("tablefunc")
+        project_state = ProjectState()
+        new_state = project_state.clone()
+        with CaptureQueriesContext(connection) as captured_queries:
+            with connection.schema_editor(atomic=False) as editor:
+                operation.database_forwards(
+                    self.app_label, editor, project_state, new_state
+                )
+        self.assertEqual(len(captured_queries), 2)
+        self.assertIn("CREATE EXTENSION", captured_queries[1]["sql"])
+        self.assertEqual(result[0], ["create", "tablefunc"])
+        result.clear()
+        with CaptureQueriesContext(connection) as captured_queries:
+            with connection.schema_editor(atomic=False) as editor:
+                operation.database_backwards(
+                    self.app_label, editor, project_state, new_state
+                )
+        self.assertEqual(len(captured_queries), 2)
+        self.assertIn("DROP EXTENSION IF EXISTS", captured_queries[1]["sql"])
+        self.assertEqual(result[0], ["drop", "tablefunc"])
 
 
 @unittest.skipUnless(connection.vendor == "postgresql", "PostgreSQL specific tests.")
