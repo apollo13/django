@@ -64,3 +64,24 @@ def register_type_handlers(connection, **kwargs):
         # The same comments in the except block of the above call to
         # register_hstore() also apply here.
         pass
+
+
+def extension_created_handlers(connection, name, **kwargs):
+    # Clear cached, stale oids.
+    if name == "hstore":
+        get_hstore_oids.cache_clear()
+    elif name == "citext":
+        get_citext_oids.cache_clear()
+    # Registering new type handlers cannot be done before the extension is
+    # installed, otherwise a subsequent data migration would use the same
+    # connection.
+    if name in {"hstore", "citext"}:
+        register_type_handlers(connection)
+
+
+def extension_removed_handlers(connection, name, **kwargs):
+    # Clear cached, stale oids.
+    if name == "hstore":
+        get_hstore_oids.cache_clear()
+    elif name == "citext":
+        get_citext_oids.cache_clear()

@@ -1,8 +1,3 @@
-from django.contrib.postgres.signals import (
-    get_citext_oids,
-    get_hstore_oids,
-    register_type_handlers,
-)
 from django.db import NotSupportedError, router
 from django.db.migrations import AddConstraint, AddIndex, RemoveIndex
 from django.db.migrations.operations.base import Operation
@@ -28,13 +23,7 @@ class CreateExtension(Operation):
                 "CREATE EXTENSION IF NOT EXISTS %s"
                 % schema_editor.quote_name(self.name)
             )
-        # Clear cached, stale oids.
-        get_hstore_oids.cache_clear()
-        get_citext_oids.cache_clear()
-        # Registering new type handlers cannot be done before the extension is
-        # installed, otherwise a subsequent data migration would use the same
-        # connection.
-        register_type_handlers(schema_editor.connection)
+            schema_editor.connection.extension_created(self.name)
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         if not router.allow_migrate(schema_editor.connection.alias, app_label):
@@ -43,9 +32,7 @@ class CreateExtension(Operation):
             schema_editor.execute(
                 "DROP EXTENSION IF EXISTS %s" % schema_editor.quote_name(self.name)
             )
-        # Clear cached, stale oids.
-        get_hstore_oids.cache_clear()
-        get_citext_oids.cache_clear()
+            schema_editor.connection.extension_removed(self.name)
 
     def extension_exists(self, schema_editor, extension):
         with schema_editor.connection.cursor() as cursor:

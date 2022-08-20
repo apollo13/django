@@ -3,6 +3,7 @@ from psycopg2.extras import DateRange, DateTimeRange, DateTimeTZRange, NumericRa
 from django.apps import AppConfig
 from django.core.signals import setting_changed
 from django.db import connections
+from django.db.backends.postgresql.signals import extension_created, extension_removed
 from django.db.backends.signals import connection_created
 from django.db.migrations.writer import MigrationWriter
 from django.db.models import CharField, OrderBy, TextField
@@ -19,7 +20,11 @@ from .lookups import (
     Unaccent,
 )
 from .serializers import RangeSerializer
-from .signals import register_type_handlers
+from .signals import (
+    extension_created_handlers,
+    extension_removed_handlers,
+    register_type_handlers,
+)
 
 RANGE_TYPES = (DateRange, DateTimeRange, DateTimeTZRange, NumericRange)
 
@@ -35,6 +40,8 @@ def uninstall_if_needed(setting, value, enter, **kwargs):
         and "django.contrib.postgres" not in set(value)
     ):
         connection_created.disconnect(register_type_handlers)
+        extension_created.disconnect(extension_created_handlers)
+        extension_removed.disconnect(extension_removed_handlers)
         CharField._unregister_lookup(Unaccent)
         TextField._unregister_lookup(Unaccent)
         CharField._unregister_lookup(SearchLookup)
@@ -73,6 +80,8 @@ class PostgresConfig(AppConfig):
                 if conn.connection is not None:
                     register_type_handlers(conn)
         connection_created.connect(register_type_handlers)
+        extension_created.connect(extension_created_handlers)
+        extension_removed.connect(extension_removed_handlers)
         CharField.register_lookup(Unaccent)
         TextField.register_lookup(Unaccent)
         CharField.register_lookup(SearchLookup)

@@ -20,6 +20,8 @@ from django.utils.functional import cached_property
 from django.utils.safestring import SafeString
 from django.utils.version import get_version_tuple
 
+from . import signals
+
 try:
     import psycopg2 as Database
     import psycopg2.extensions
@@ -369,6 +371,16 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def make_debug_cursor(self, cursor):
         return CursorDebugWrapper(cursor, self)
+
+    def extension_created(self, name):
+        signals.extension_created.send(
+            sender=self.__class__, connection=self, name=name
+        )
+
+    def extension_removed(self, name):
+        signals.extension_removed.send(
+            sender=self.__class__, connection=self, name=name
+        )
 
 
 class CursorDebugWrapper(BaseCursorDebugWrapper):

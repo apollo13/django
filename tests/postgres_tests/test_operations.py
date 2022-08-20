@@ -220,7 +220,7 @@ class CreateExtensionTests(PostgreSQLTestCase):
                 operation.database_forwards(
                     self.app_label, editor, project_state, new_state
                 )
-        self.assertEqual(len(captured_queries), 4)
+        self.assertEqual(len(captured_queries), 2)
         self.assertIn("CREATE EXTENSION IF NOT EXISTS", captured_queries[1]["sql"])
         # Reversal.
         with CaptureQueriesContext(connection) as captured_queries:
@@ -242,7 +242,7 @@ class CreateExtensionTests(PostgreSQLTestCase):
                 operation.database_forwards(
                     self.app_label, editor, project_state, new_state
                 )
-        self.assertEqual(len(captured_queries), 3)
+        self.assertEqual(len(captured_queries), 1)
         self.assertIn("SELECT", captured_queries[0]["sql"])
 
     def test_drop_nonexistent_extension(self):
