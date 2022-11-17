@@ -99,6 +99,10 @@ def get_adapters_template(use_tz, timezone):
     # This, however, can be overridden by create_cursor.
     register_tzloader(timezone, ctx)
 
+    # Dump strings using the text oid, where the default unknown oid
+    # doesn't work well (e.g. in variadic functions)
+    ctx.register_dumper(str, StrDumper)
+
     return ctx
 
 
