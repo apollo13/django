@@ -203,8 +203,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     # Map the initial connection state
     ctx_templates = {}
 
-    is_psycopg3 = is_psycopg3
-
     def get_database_version(self):
         """
         Return a tuple of the database's version.

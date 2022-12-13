@@ -19,6 +19,7 @@ try:
         DateTimeRange,
         DateTimeTZRange,
         NumericRange,
+        is_psycopg3,
     )
 except ImportError:
     pass
@@ -59,9 +60,7 @@ class PostgresConfigTests(TestCase):
                         MigrationWriter.serialize(field)
 
         assertNotSerializable()
-        import_name = (
-            "psycopg.types.range" if connection.is_psycopg3 else "psycopg2.extras"
-        )
+        import_name = "psycopg.types.range" if is_psycopg3 else "psycopg2.extras"
         with self.modify_settings(INSTALLED_APPS={"append": "django.contrib.postgres"}):
             for default, test_field in tests:
                 with self.subTest(default=default):
@@ -75,12 +74,8 @@ class PostgresConfigTests(TestCase):
                         },
                     )
                     self.assertIn(
-                        f"%s.%s(default={import_name}.%r)"
-                        % (
-                            field.__module__,
-                            field.__class__.__name__,
-                            default,
-                        ),
+                        f"{field.__module__}.{field.__class__.__name__}"
+                        f"(default={import_name}.{default!r})",
                         serialized_field,
                     )
         assertNotSerializable()

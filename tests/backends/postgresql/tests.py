@@ -14,6 +14,11 @@ from django.db import (
 from django.db.backends.base.base import BaseDatabaseWrapper
 from django.test import TestCase, override_settings
 
+try:
+    from django.db.backends.postgresql.psycopg_any import is_psycopg3
+except ImportError:
+    is_psycopg3 = False
+
 
 @unittest.skipUnless(connection.vendor == "postgresql", "PostgreSQL tests")
 class Tests(TestCase):
@@ -318,9 +323,8 @@ class Tests(TestCase):
             self.assertEqual(psycopg_version(), (4, 2))
 
     @override_settings(DEBUG=True)
-    def test_copy_cursors(self):
-        if connection.is_psycopg3:
-            raise unittest.SkipTest("psycopg2 test")
+    @unittest.skipIf(is_psycopg3, "psycopg2 specific test")
+    def test_copy_to_expert_cursors(self):
         out = StringIO()
         copy_expert_sql = "COPY django_session TO STDOUT (FORMAT CSV, HEADER)"
         with connection.cursor() as cursor:
@@ -330,6 +334,16 @@ class Tests(TestCase):
             [q["sql"] for q in connection.queries],
             [copy_expert_sql, "COPY django_session TO STDOUT"],
         )
+
+    @override_settings(DEBUG=True)
+    @unittest.skipUnless(is_psycopg3, "psycopg3 specific test")
+    def test_copy_cursors(self):
+        copy_sql = "COPY django_session TO STDOUT (FORMAT CSV, HEADER)"
+        with connection.cursor() as cursor:
+            with cursor.copy(copy_sql) as copy:
+                for row in copy:
+                    pass
+        self.assertEqual([q["sql"] for q in connection.queries], [copy_sql])
 
     def test_get_database_version(self):
         new_connection = connection.copy()
@@ -342,14 +356,3 @@ class Tests(TestCase):
         with self.assertRaisesMessage(NotSupportedError, msg):
             connection.check_database_version_supported()
         self.assertTrue(mocked_get_database_version.called)
-
-    @override_settings(DEBUG=True)
-    def test_copy_cursors_3(self):
-        if not connection.is_psycopg3:
-            raise unittest.SkipTest("psycopg > 2 test")
-        copy_sql = "COPY django_session TO STDOUT (FORMAT CSV, HEADER)"
-        with connection.cursor() as cursor:
-            with cursor.copy(copy_sql) as copy:
-                for row in copy:
-                    pass
-        self.assertEqual([q["sql"] for q in connection.queries], [copy_sql])

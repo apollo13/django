@@ -78,7 +78,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
         lookup_type = lookup_type.upper()
         if not self._extract_format_re.fullmatch(lookup_type):
-            raise ValueError(f"Invalid loookup type: {lookup_type!r}")
+            raise ValueError(f"Invalid lookup type: {lookup_type!r}")
         return f"EXTRACT({lookup_type} FROM {sql})", params
 
     def date_trunc_sql(self, lookup_type, sql, params, tzname=None):

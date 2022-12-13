@@ -918,8 +918,9 @@ class FixtureLoadingTests(DumpDataAssertMixin, TestCase):
 
     @skipUnlessDBFeature("prohibits_null_characters_in_text_exception")
     def test_loaddata_null_characters_on_postgresql(self):
-        error, pattern = connection.features.prohibits_null_characters_in_text_exception
-        with self.assertRaisesRegex(error, pattern):
+        error, msg = connection.features.prohibits_null_characters_in_text_exception
+        msg = f"Could not load fixtures.Article(pk=2): {msg}"
+        with self.assertRaisesMessage(error, msg):
             management.call_command("loaddata", "null_character_in_field_value.json")
 
     def test_loaddata_app_option(self):

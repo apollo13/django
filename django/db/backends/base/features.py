@@ -337,7 +337,7 @@ class BaseDatabaseFeatures:
     # Does the backend support the logical XOR operator?
     supports_logical_xor = False
 
-    # Set to (exception, message) if null characters in text are disallowed
+    # Set to (exception, message) if null characters in text are disallowed.
     prohibits_null_characters_in_text_exception = None
 
     # Collation names for use by the Django test suite.
