@@ -1,13 +1,13 @@
 """
 PostgreSQL database backend for Django.
 
-Requires psycopg2 >= 2.8.4 or psycopg3 >= 3.1
+Requires psycopg2 >= 2.8.4 or psycopg >= 3.1
 """
+
 import asyncio
 import threading
 import warnings
 from contextlib import contextmanager
-from functools import lru_cache
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -47,16 +47,12 @@ if (3,) <= psycopg_version() < (3, 1):
 from .psycopg_any import IsolationLevel, is_psycopg3  # NOQA isort:skip
 
 if is_psycopg3:
-    import psycopg
-    from psycopg import sql
+    from psycopg import adapters, sql
     from psycopg.pq import Format
-    from psycopg.types.datetime import TimestamptzLoader
-    from psycopg.types.range import Range, RangeDumper
-    from psycopg.types.string import TextLoader
 
-    TIMESTAMPTZ_OID = psycopg.adapters.types["timestamptz"].oid
-    TSRANGE_OID = psycopg.postgres.types["tsrange"].oid
-    TSTZRANGE_OID = psycopg.postgres.types["tstzrange"].oid
+    from .psycopg_any import get_adapters_template, register_tzloader
+
+    TIMESTAMPTZ_OID = adapters.types["timestamptz"].oid
 
 else:
     import psycopg2.extensions
@@ -82,28 +78,6 @@ from .features import DatabaseFeatures  # NOQA isort:skip
 from .introspection import DatabaseIntrospection  # NOQA isort:skip
 from .operations import DatabaseOperations  # NOQA isort:skip
 from .schema import DatabaseSchemaEditor  # NOQA isort:skip
-
-
-@lru_cache
-def get_adapters_template(use_tz, timezone):
-    # Create at adapters map extending the base one to base connections on
-    ctx = psycopg.adapt.AdaptersMap(psycopg.adapters)
-
-    # Register a no-op dumper to avoid a round trip from psycopg version 3
-    # decode to json.dumps() to json.loads(), when using a custom decoder
-    # in JSONField.
-    ctx.register_loader("jsonb", TextLoader)
-
-    # Don't convert automatically from Postgres network types to Python ipaddress
-    ctx.register_loader("inet", TextLoader)
-    ctx.register_loader("cidr", TextLoader)
-    ctx.register_dumper(Range, DjangoRangeDumper)
-
-    # Register a timestamptz loader configured on self.timezone.
-    # This, however, can be overridden by create_cursor.
-    register_tzloader(timezone, ctx)
-
-    return ctx
 
 
 class DatabaseWrapper(BaseDatabaseWrapper):
@@ -200,9 +174,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     # PostgreSQL backend-specific attributes.
     _named_cursor_idx = 0
 
-    # Map the initial connection state
-    ctx_templates = {}
-
     def get_database_version(self):
         """
         Return a tuple of the database's version.
@@ -263,20 +234,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 "prepare_threshold", None
             )
         return conn_params
-
-    if is_psycopg3:
-
-        def _configure_cursor(self, cursor):
-            # Register the cursor timezone only if the connection disagrees, to
-            # avoid copying the adapter map.
-            tzloader = self.connection.adapters.get_loader(TIMESTAMPTZ_OID, Format.TEXT)
-            if self.timezone != tzloader.timezone:
-                register_tzloader(self.timezone, cursor)
-
-    else:
-
-        def _configure_cursor(self, cursor):
-            cursor.tzinfo_factory = self.tzinfo_factory if settings.USE_TZ else None
 
     @async_unsafe
     def get_new_connection(self, conn_params):
@@ -345,7 +302,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         else:
             cursor = self.connection.cursor()
 
-        self._configure_cursor(cursor)
+        if is_psycopg3:
+            # Register the cursor timezone only if the connection disagrees, to
+            # avoid copying the adapter map.
+            tzloader = self.connection.adapters.get_loader(TIMESTAMPTZ_OID, Format.TEXT)
+            if self.timezone != tzloader.timezone:
+                register_tzloader(self.timezone, cursor)
+        else:
+            cursor.tzinfo_factory = self.tzinfo_factory if settings.USE_TZ else None
         return cursor
 
     def tzinfo_factory(self, offset):
@@ -450,38 +414,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
 
 if is_psycopg3:
-
-    class BaseTzLoader(TimestamptzLoader):
-        """
-        Load a Postgres timestamptz using the a specific timezone.
-
-        The timezone can be None too, in which case it will be chopped.
-        """
-
-        timezone = None
-
-        def load(self, data):
-            res = super().load(data)
-            return res.replace(tzinfo=self.timezone)
-
-    def register_tzloader(tz, context):
-        class SpecificTzLoader(BaseTzLoader):
-            timezone = tz
-
-        context.adapters.register_loader("timestamptz", SpecificTzLoader)
-
-    class DjangoRangeDumper(RangeDumper):
-        """
-        A Range dumper customized for Django.
-        """
-
-        def upgrade(self, obj, format):
-            # Dump ranges containing naive datetimes as tstzrange, because Django
-            # doesn't use tz-aware ones.
-            dumper = super().upgrade(obj, format)
-            if dumper is not self and dumper.oid == TSRANGE_OID:
-                dumper.oid = TSTZRANGE_OID
-            return dumper
 
     class Cursor(Database.Cursor):
         """
