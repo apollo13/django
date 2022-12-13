@@ -11,9 +11,10 @@ from .operations import PostGISOperations
 from .schema import PostGISSchemaEditor
 
 if is_psycopg3:
-    from psycopg.adapt import Dumper, Loader
+    from psycopg.adapt import Dumper
     from psycopg.pq import Format
     from psycopg.types import TypeInfo
+    from psycopg.types.string import TextBinaryLoader, TextLoader
 
     class GeometryType:
         pass
@@ -23,20 +24,6 @@ if is_psycopg3:
 
     class RasterType:
         pass
-
-    class BinaryLoader(Loader):
-        format = Format.BINARY
-
-        def load(self, data):
-            if not isinstance(data, bytes):
-                data = bytes(data)
-            return data
-
-    class TextLoader(Loader):
-        def load(self, data):
-            if isinstance(data, memoryview):
-                return bytes(data).decode()
-            return data.decode()
 
     class BaseTextDumper(Dumper):
         def dump(self, obj):
@@ -81,7 +68,7 @@ if is_psycopg3:
                     return self.RasterDumper(RasterType)
 
             def dump(self, obj):
-                raise NotImplementedError("Should not happen")
+                raise NotImplementedError
 
         class PostGISTextDumper(BaseDumper, base_dumper=BaseTextDumper):
             pass
@@ -116,12 +103,15 @@ class DatabaseWrapper(PsycopgDatabaseWrapper):
             if bool(cursor.fetchone()):
                 return
             cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
-            # Ensure adapters are registers if postgis is used within this connection.
-            self.register_geometry_adapters(self.connection, True)
+            if is_psycopg3:
+                # Ensure adapters are registers if PostGIS is used within this
+                # connection.
+                self.register_geometry_adapters(self.connection, True)
 
     def get_new_connection(self, conn_params):
         connection = super().get_new_connection(conn_params)
-        self.register_geometry_adapters(connection)
+        if is_psycopg3:
+            self.register_geometry_adapters(connection)
         return connection
 
     if is_psycopg3:
@@ -134,16 +124,16 @@ class DatabaseWrapper(PsycopgDatabaseWrapper):
                 info = TypeInfo.fetch(pg_connection, typename)
                 registry[self.alias] = info
 
-            if info:  # Can be None if the type does not exist (yet)
+            if info:  # Can be None if the type does not exist (yet).
                 info.register(pg_connection)
                 pg_connection.adapters.register_loader(info.oid, TextLoader)
-                pg_connection.adapters.register_loader(info.oid, BinaryLoader)
+                pg_connection.adapters.register_loader(info.oid, TextBinaryLoader)
 
             return info.oid if info else None
 
         def register_geometry_adapters(self, pg_connection, clear_caches=False):
             if clear_caches:
-                for typename in {"geometry", "geography", "raster"}:
+                for typename in self._type_infos:
                     self._type_infos[typename].pop(self.alias, None)
 
             geo_oid = self._register_type(pg_connection, "geometry")
@@ -155,8 +145,3 @@ class DatabaseWrapper(PsycopgDatabaseWrapper):
             )
             pg_connection.adapters.register_dumper(PostGISAdapter, PostGISTextDumper)
             pg_connection.adapters.register_dumper(PostGISAdapter, PostGISBinaryDumper)
-
-    else:
-
-        def register_geometry_adapters(self, pg_connection, clear_caches=False):
-            pass
