@@ -253,18 +253,18 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             conn_params["host"] = settings_dict["HOST"]
         if settings_dict["PORT"]:
             conn_params["port"] = settings_dict["PORT"]
+        if is_psycopg3:
+            conn_params["context"] = get_adapters_template(
+                settings.USE_TZ, self.timezone
+            )
+            # Disable prepared statements by default to keep connection poolers
+            # working. Can be reenabled via OPTIONS in the settings dict.
+            conn_params["prepare_threshold"] = conn_params.pop(
+                "prepare_threshold", None
+            )
         return conn_params
 
     if is_psycopg3:
-
-        def _get_new_connection(self, conn_params):
-            ctx = get_adapters_template(settings.USE_TZ, self.timezone)
-            # Disable prepared statements by default to keep connection poolers
-            # working. Can be reenabled via OPTIONS in the settings dict.
-            prepare_threshold = conn_params.pop("prepare_threshold", None)
-            return self.Database.connect(
-                **conn_params, prepare_threshold=prepare_threshold, context=ctx
-            )
 
         def _configure_cursor(self, cursor):
             # Register the cursor timezone only if the connection disagrees, to
@@ -274,16 +274,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 register_tzloader(self.timezone, cursor)
 
     else:
-
-        def _get_new_connection(self, conn_params):
-            connection = self.Database.connect(**conn_params)
-            # Register dummy loads() to avoid a round trip from psycopg2's decode
-            # to json.dumps() to json.loads(), when using a custom decoder in
-            # JSONField.
-            psycopg2.extras.register_default_jsonb(
-                conn_or_curs=connection, loads=lambda x: x
-            )
-            return connection
 
         def _configure_cursor(self, cursor):
             cursor.tzinfo_factory = self.tzinfo_factory if settings.USE_TZ else None
@@ -311,9 +301,16 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     f"Invalid transaction isolation level {isolation_level_value} "
                     f"specified. Use one of the psycopg.IsolationLevel values."
                 )
-        connection = self._get_new_connection(conn_params)
+        connection = self.Database.connect(**conn_params)
         if set_isolation_level:
             connection.isolation_level = self.isolation_level
+        if not is_psycopg3:
+            # Register dummy loads() to avoid a round trip from psycopg2's
+            # decode to json.dumps() to json.loads(), when using a custom
+            # decoder in JSONField.
+            psycopg2.extras.register_default_jsonb(
+                conn_or_curs=connection, loads=lambda x: x
+            )
         connection.cursor_factory = Cursor
         return connection
 
