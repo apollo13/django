@@ -223,6 +223,90 @@ class Tests(TestCase):
         finally:
             new_connection.close()
 
+    @unittest.skipUnless(is_psycopg3, "psycopg3 specific test")
+    def test_connect_pool(self):
+        from psycopg_pool import PoolTimeout
+
+        new_connection = connection.copy()
+        self.assertIsNone(new_connection.pool)
+
+        new_connection.settings_dict["OPTIONS"]["pool"] = {
+            "min_size": 2,
+            "timeout": 0.1,
+        }
+        try:
+            self.assertIsNotNone(new_connection.pool)
+            conn_params = new_connection.get_connection_params()
+            connection_1 = new_connection.get_new_connection(conn_params)
+            new_connection.get_new_connection(conn_params)
+            with self.assertRaises(PoolTimeout):
+                # The pool has a maximum of 2 connections.
+                new_connection.get_new_connection(conn_params)
+
+            new_connection.pool.putconn(connection_1)
+            connection_3 = new_connection.get_new_connection(conn_params)
+            # Reuses the first connection as it is available.
+            self.assertEqual(
+                connection_3.info.backend_pid, connection_1.info.backend_pid
+            )
+        finally:
+            new_connection.close_pool()
+
+    @unittest.skipUnless(is_psycopg3, "psycopg3 specific test")
+    def test_connect_pool_set_to_true(self):
+        new_connection = connection.copy()
+        self.assertIsNone(new_connection.pool)
+
+        new_connection.settings_dict["OPTIONS"]["pool"] = True
+        try:
+            self.assertIsNotNone(new_connection.pool)
+        finally:
+            new_connection.close_pool()
+
+    @unittest.skipUnless(is_psycopg3, "psycopg3 specific test")
+    def test_connect_pool_with_timezone(self):
+        new_time_zone = "Africa/Nairobi"
+        new_connection = connection.copy()
+
+        try:
+            with new_connection.cursor() as cursor:
+                cursor.execute("SHOW TIMEZONE")
+                tz = cursor.fetchone()[0]
+                self.assertNotEqual(new_time_zone, tz)
+        finally:
+            new_connection.close()
+
+        del new_connection.timezone_name
+        new_connection.settings_dict["OPTIONS"]["pool"] = True
+        try:
+            with self.settings(TIME_ZONE=new_time_zone):
+                with new_connection.cursor() as cursor:
+                    cursor.execute("SHOW TIMEZONE")
+                    tz = cursor.fetchone()[0]
+                    self.assertEqual(new_time_zone, tz)
+        finally:
+            new_connection.close()
+            new_connection.close_pool()
+
+    @unittest.skipUnless(is_psycopg3, "psycopg3 specific test")
+    def test_pooling_not_support_persistent_connections(self):
+        new_connection = connection.copy()
+        self.assertIsNone(new_connection.pool)
+
+        new_connection.settings_dict["OPTIONS"]["pool"] = True
+        new_connection.settings_dict["CONN_MAX_AGE"] = 10
+        msg = "Pooling doesn't support persistent connections"
+        with self.assertRaisesMessage(ImproperlyConfigured, msg):
+            new_connection.pool
+
+    @unittest.skipIf(is_psycopg3, "psycopg2 specific test")
+    def test_connect_pool_setting_ignored_for_psycopg2(self):
+        new_connection = connection.copy()
+        self.assertIsNone(new_connection.pool)
+
+        new_connection.settings_dict["OPTIONS"]["pool"] = True
+        self.assertIsNone(new_connection.pool)
+
     def test_connect_isolation_level(self):
         """
         The transaction level can be configured with

@@ -1,6 +1,7 @@
 import sys
 
 from django.core.exceptions import ImproperlyConfigured
+from django.db import connections
 from django.db.backends.base.creation import BaseDatabaseCreation
 from django.db.backends.postgresql.psycopg_any import errors
 from django.db.backends.utils import strip_quotes
@@ -30,6 +31,12 @@ class DatabaseCreation(BaseDatabaseCreation):
             template=test_settings.get("TEMPLATE"),
         )
 
+    def _close_all_connections(self):
+        self.connection.close()
+        alias = self.connection.alias
+        if connections[alias].pool is not None:
+            connections[alias].close_pool()
+
     def _database_exists(self, cursor, database_name):
         cursor.execute(
             "SELECT 1 FROM pg_catalog.pg_database WHERE datname = %s",
@@ -44,6 +51,7 @@ class DatabaseCreation(BaseDatabaseCreation):
                 # try to create a new one.
                 return
             super()._execute_create_test_db(cursor, parameters, keepdb)
+            self._close_all_connections()
         except Exception as e:
             if not isinstance(e.__cause__, errors.DuplicateDatabase):
                 # All errors except "database already exists" cancel tests.
@@ -57,7 +65,7 @@ class DatabaseCreation(BaseDatabaseCreation):
     def _clone_test_db(self, suffix, verbosity, keepdb=False):
         # CREATE DATABASE ... WITH TEMPLATE ... requires closing connections
         # to the template database.
-        self.connection.close()
+        self._close_all_connections()
 
         source_database_name = self.connection.settings_dict["NAME"]
         target_database_name = self.get_test_db_clone_settings(suffix)["NAME"]
@@ -84,3 +92,7 @@ class DatabaseCreation(BaseDatabaseCreation):
                 except Exception as e:
                     self.log("Got an error cloning the test database: %s" % e)
                     sys.exit(2)
+
+    def _destroy_test_db(self, test_database_name, verbosity):
+        self._close_all_connections()
+        super()._destroy_test_db(test_database_name, verbosity)

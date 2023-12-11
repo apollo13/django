@@ -153,6 +153,12 @@ Database backends
   to allow specifying :ref:`pragma options <sqlite-init-command>` to set upon
   connection.
 
+Database backends
+~~~~~~~~~~~~~~~~~
+
+* The new ``"pool"`` option is now supported in :setting:`OPTIONS` on
+  PostgreSQL to allow using :ref:`connection pools <postgresql-pool>`.
+
 Decorators
 ~~~~~~~~~~
 
