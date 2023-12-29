@@ -20,6 +20,15 @@ except ImportError:
     is_psycopg3 = False
 
 
+def no_pool_connection(alias=None):
+    new_connection = connection.copy(alias)
+    new_connection.settings_dict = copy.deepcopy(connection.settings_dict)
+    # Ensure that the second connection circumvents the pool, this is kind
+    # of a hack, but we cannot easily change the pool connections
+    new_connection.settings_dict.setdefault("OPTIONS", {})["pool"] = None
+    return new_connection
+
+
 @unittest.skipUnless(connection.vendor == "postgresql", "PostgreSQL tests")
 class Tests(TestCase):
     databases = {"default", "other"}
@@ -177,7 +186,7 @@ class Tests(TestCase):
         PostgreSQL shouldn't roll back SET TIME ZONE, even if the first
         transaction is rolled back (#17062).
         """
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         try:
             # Ensure the database default time zone is different than
             # the time zone in new_connection.settings_dict. We can
@@ -213,7 +222,7 @@ class Tests(TestCase):
         The connection wrapper shouldn't believe that autocommit is enabled
         after setting the time zone when AUTOCOMMIT is False (#21452).
         """
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         new_connection.settings_dict["AUTOCOMMIT"] = False
 
         try:
@@ -227,35 +236,46 @@ class Tests(TestCase):
     def test_connect_pool(self):
         from psycopg_pool import PoolTimeout
 
-        new_connection = connection.copy()
-        self.assertIsNone(new_connection.pool)
-
+        new_connection = no_pool_connection(alias="default_pool")
         new_connection.settings_dict["OPTIONS"]["pool"] = {
-            "min_size": 2,
+            "min_size": 0,
+            "max_size": 2,
             "timeout": 0.1,
         }
+        self.assertIsNotNone(new_connection.pool)
+
+        connections = []
+
+        def get_connection():
+            # NOTE: `copy()` reuses the existing alias and as such the same pool
+            conn = new_connection.copy()
+            conn.connect()
+            connections.append(conn)
+            return conn
+
         try:
-            self.assertIsNotNone(new_connection.pool)
-            conn_params = new_connection.get_connection_params()
-            connection_1 = new_connection.get_new_connection(conn_params)
-            new_connection.get_new_connection(conn_params)
+            connection_1 = get_connection()  # First con
+            connection_1_backend_pid = connection_1.connection.info.backend_pid
+            get_connection()  # Get the second conn
             with self.assertRaises(PoolTimeout):
                 # The pool has a maximum of 2 connections.
-                new_connection.get_new_connection(conn_params)
+                get_connection()
 
-            new_connection.pool.putconn(connection_1)
-            connection_3 = new_connection.get_new_connection(conn_params)
+            connection_1.close()  # Release back to the pool
+            connection_3 = get_connection()
             # Reuses the first connection as it is available.
             self.assertEqual(
-                connection_3.info.backend_pid, connection_1.info.backend_pid
+                connection_3.connection.info.backend_pid, connection_1_backend_pid
             )
         finally:
+            # Release all connections back to the pool
+            for conn in connections:
+                conn.close()
             new_connection.close_pool()
 
     @unittest.skipUnless(is_psycopg3, "psycopg3 specific test")
     def test_connect_pool_set_to_true(self):
-        new_connection = connection.copy()
-        self.assertIsNone(new_connection.pool)
+        new_connection = no_pool_connection(alias="default_pool")
 
         new_connection.settings_dict["OPTIONS"]["pool"] = True
         try:
@@ -266,7 +286,7 @@ class Tests(TestCase):
     @unittest.skipUnless(is_psycopg3, "psycopg3 specific test")
     def test_connect_pool_with_timezone(self):
         new_time_zone = "Africa/Nairobi"
-        new_connection = connection.copy()
+        new_connection = no_pool_connection(alias="default_pool")
 
         try:
             with new_connection.cursor() as cursor:
@@ -290,8 +310,7 @@ class Tests(TestCase):
 
     @unittest.skipUnless(is_psycopg3, "psycopg3 specific test")
     def test_pooling_not_support_persistent_connections(self):
-        new_connection = connection.copy()
-        self.assertIsNone(new_connection.pool)
+        new_connection = no_pool_connection(alias="default_pool")
 
         new_connection.settings_dict["OPTIONS"]["pool"] = True
         new_connection.settings_dict["CONN_MAX_AGE"] = 10
@@ -301,11 +320,12 @@ class Tests(TestCase):
 
     @unittest.skipIf(is_psycopg3, "psycopg2 specific test")
     def test_connect_pool_setting_ignored_for_psycopg2(self):
-        new_connection = connection.copy()
-        self.assertIsNone(new_connection.pool)
+        new_connection = no_pool_connection()
 
         new_connection.settings_dict["OPTIONS"]["pool"] = True
-        self.assertIsNone(new_connection.pool)
+        msg = "Database pooling requires psycopg >= 3"
+        with self.assertRaisesMessage(ImproperlyConfigured, msg):
+            new_connection.connect()
 
     def test_connect_isolation_level(self):
         """
@@ -320,7 +340,7 @@ class Tests(TestCase):
         # Check the level on the psycopg connection, not the Django wrapper.
         self.assertIsNone(connection.connection.isolation_level)
 
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         new_connection.settings_dict["OPTIONS"][
             "isolation_level"
         ] = IsolationLevel.SERIALIZABLE
@@ -337,7 +357,7 @@ class Tests(TestCase):
 
     def test_connect_invalid_isolation_level(self):
         self.assertIsNone(connection.connection.isolation_level)
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         new_connection.settings_dict["OPTIONS"]["isolation_level"] = -1
         msg = (
             "Invalid transaction isolation level -1 specified. Use one of the "
@@ -353,7 +373,7 @@ class Tests(TestCase):
         """
         try:
             custom_role = "django_nonexistent_role"
-            new_connection = connection.copy()
+            new_connection = no_pool_connection()
             new_connection.settings_dict["OPTIONS"]["assume_role"] = custom_role
             msg = f'role "{custom_role}" does not exist'
             with self.assertRaisesMessage(errors.InvalidParameterValue, msg):
@@ -369,7 +389,7 @@ class Tests(TestCase):
         """
         from django.db.backends.postgresql.base import ServerBindingCursor
 
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         new_connection.settings_dict["OPTIONS"]["server_side_binding"] = True
         try:
             new_connection.connect()
@@ -390,7 +410,7 @@ class Tests(TestCase):
         class MyCursor(Cursor):
             pass
 
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         new_connection.settings_dict["OPTIONS"]["cursor_factory"] = MyCursor
         try:
             new_connection.connect()
@@ -399,7 +419,7 @@ class Tests(TestCase):
             new_connection.close()
 
     def test_connect_no_is_usable_checks(self):
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         try:
             with mock.patch.object(new_connection, "is_usable") as is_usable:
                 new_connection.connect()
@@ -408,7 +428,7 @@ class Tests(TestCase):
             new_connection.close()
 
     def test_client_encoding_utf8_enforce(self):
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         new_connection.settings_dict["OPTIONS"]["client_encoding"] = "iso-8859-2"
         try:
             new_connection.connect()
@@ -501,7 +521,7 @@ class Tests(TestCase):
         self.assertEqual([q["sql"] for q in connection.queries], [copy_sql])
 
     def test_get_database_version(self):
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         new_connection.pg_version = 130009
         self.assertEqual(new_connection.get_database_version(), (13, 9))
 
@@ -513,7 +533,7 @@ class Tests(TestCase):
         self.assertTrue(mocked_get_database_version.called)
 
     def test_compose_sql_when_no_connection(self):
-        new_connection = connection.copy()
+        new_connection = no_pool_connection()
         try:
             self.assertEqual(
                 new_connection.ops.compose_sql("SELECT %s", ["test"]),

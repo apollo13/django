@@ -11,10 +11,12 @@ from contextlib import contextmanager
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.core.signals import setting_changed
 from django.db import DatabaseError as WrappedDatabaseError
 from django.db import connections
 from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.backends.utils import CursorDebugWrapper as BaseCursorDebugWrapper
+from django.dispatch import receiver
 from django.utils.asyncio import async_unsafe
 from django.utils.functional import cached_property
 from django.utils.safestring import SafeString
@@ -201,8 +203,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     @property
     def pool(self):
-        pool_options = self.settings_dict.get("OPTIONS", {}).get("pool", None)
-        if not is_psycopg3 or pool_options is None:
+        pool_options = self.settings_dict["OPTIONS"].get("pool")
+        if pool_options is None:
             return None
 
         if self.alias not in self._connection_pools:
@@ -240,8 +242,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         return self._connection_pools[self.alias]
 
     def close_pool(self):
-        self.pool.close()
-        del self._connection_pools[self.alias]
+        if pool := self.pool:
+            pool.close()
+            del self._connection_pools[self.alias]
 
     def get_database_version(self):
         """
@@ -253,9 +256,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def get_connection_params(self):
         settings_dict = self.settings_dict
         # None may be used to connect to the default 'postgres' db
-        if settings_dict["NAME"] == "" and not settings_dict.get("OPTIONS", {}).get(
-            "service"
-        ):
+        if settings_dict["NAME"] == "" and not settings_dict["OPTIONS"].get("service"):
             raise ImproperlyConfigured(
                 "settings.DATABASES is improperly configured. "
                 "Please supply the NAME or OPTIONS['service'] value."
@@ -278,7 +279,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             }
         elif settings_dict["NAME"] is None:
             # Connect to the default 'postgres' db.
-            settings_dict.get("OPTIONS", {}).pop("service", None)
+            settings_dict["OPTIONS"].pop("service", None)
             conn_params = {"dbname": "postgres", **settings_dict["OPTIONS"]}
         else:
             conn_params = {**settings_dict["OPTIONS"]}
@@ -286,7 +287,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         conn_params.pop("assume_role", None)
         conn_params.pop("isolation_level", None)
-        conn_params.pop("pool", None)
+        pool = conn_params.pop("pool", None)
+        if pool and not is_psycopg3:
+            raise ImproperlyConfigured("Database pooling requires psycopg >= 3")
         server_side_binding = conn_params.pop("server_side_binding", None)
         conn_params.setdefault(
             "cursor_factory",
@@ -370,7 +373,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # Set the role on the connection. This is useful if the credential used
         # to login is not the same as the role that owns database resources. As
         # can be the case when using temporary or ephemeral credentials.
-        role_name = self.settings_dict.get("OPTIONS", {}).get("assume_role")
+        role_name = self.settings_dict["OPTIONS"].get("assume_role")
         commit_role = ensure_role(connection, self.ops, role_name)
 
         return commit_role or commit_tz
@@ -382,7 +385,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # thread and not directly executed.
             with self.wrap_database_errors:
                 if self.pool:
-                    self.pool.putconn(self.connection)
+                    # Ensure that we return to the correct pool. This is basically a
+                    # workaround for tests so we can change the pool on setting
+                    # changes (USE_TZ, TIME_ZONE).
+                    self.connection._pool.putconn(self.connection)
+                    self.connection = None  # We are not allowed to touch it anymore
                 else:
                     return self.connection.close()
 
@@ -476,6 +483,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             cursor.execute("SET CONSTRAINTS ALL DEFERRED")
 
     def is_usable(self):
+        if self.connection is None:
+            return False
         try:
             # Use a psycopg cursor directly, bypassing Django's utilities.
             with self.connection.cursor() as cursor:
@@ -594,3 +603,12 @@ else:
         def copy_to(self, file, table, *args, **kwargs):
             with self.debug_sql(sql="COPY %s TO STDOUT" % table):
                 return self.cursor.copy_to(file, table, *args, **kwargs)
+
+
+@receiver(setting_changed)
+def reset_pools(*, setting, **kwargs):
+    if setting not in {"USE_TZ", "TIME_ZONE"}:
+        return
+    for pool in DatabaseWrapper._connection_pools.values():
+        pool.close()
+    DatabaseWrapper._connection_pools.clear()

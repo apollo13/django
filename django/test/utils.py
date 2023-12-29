@@ -359,6 +359,9 @@ def teardown_databases(old_config, verbosity, parallel=0, keepdb=False):
     """Destroy all the non-mirror databases."""
     for connection, old_name, destroy in old_config:
         if destroy:
+            # TODO: Hack :/
+            if hasattr(connection, "close_pool"):
+                connection.close_pool()
             if parallel > 1:
                 for index in range(parallel):
                     connection.creation.destroy_test_db(
