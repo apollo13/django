@@ -224,10 +224,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             connect_kwargs = self.get_connection_params()
             # Ensure we run in autocommit, Django properly sets it later on
             connect_kwargs["autocommit"] = True
+            enable_checks = self.settings_dict["CONN_HEALTH_CHECKS"]
             pool = ConnectionPool(
                 kwargs=connect_kwargs,
                 open=False,  # Do not open the pool during startup
                 configure=self._configure_connection,
+                check=ConnectionPool.check_connection if enable_checks else None,
                 **pool_options,
             )
 
@@ -495,6 +497,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             return False
         else:
             return True
+
+    def close_if_health_check_failed(self):
+        if self.pool:
+            return  # The pool only returns healthy connections.
+        return super().close_if_health_check_failed()
 
     @contextmanager
     def _nodb_cursor(self):
