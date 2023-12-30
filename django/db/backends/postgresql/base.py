@@ -11,12 +11,10 @@ from contextlib import contextmanager
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.core.signals import setting_changed
 from django.db import DatabaseError as WrappedDatabaseError
 from django.db import connections
 from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.backends.utils import CursorDebugWrapper as BaseCursorDebugWrapper
-from django.dispatch import receiver
 from django.utils.asyncio import async_unsafe
 from django.utils.functional import cached_property
 from django.utils.safestring import SafeString
@@ -204,7 +202,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     @property
     def pool(self):
         pool_options = self.settings_dict["OPTIONS"].get("pool")
-        if pool_options is None:
+        if pool_options is None or not is_psycopg3:
             return None
 
         if self.alias not in self._connection_pools:
@@ -359,6 +357,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         return connection
 
     def ensure_timezone(self):
+        # Close the pool so new connections pick up the correct timezone.
+        if self.pool:
+            self.pool.close()
+            del self._connection_pools[self.alias]
         if self.connection is None:
             return False
         return ensure_timezone(self.connection, self.ops, self.timezone_name)
@@ -603,12 +605,3 @@ else:
         def copy_to(self, file, table, *args, **kwargs):
             with self.debug_sql(sql="COPY %s TO STDOUT" % table):
                 return self.cursor.copy_to(file, table, *args, **kwargs)
-
-
-@receiver(setting_changed)
-def reset_pools(*, setting, **kwargs):
-    if setting not in {"USE_TZ", "TIME_ZONE"}:
-        return
-    for pool in DatabaseWrapper._connection_pools.values():
-        pool.close()
-    DatabaseWrapper._connection_pools.clear()
