@@ -202,7 +202,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     @property
     def pool(self):
         pool_options = self.settings_dict["OPTIONS"].get("pool")
-        if pool_options is None or self.alias == NO_DB_ALIAS or not is_psycopg3:
+        if not pool_options or self.alias == NO_DB_ALIAS or not is_psycopg3:
             return None
 
         if self.alias not in self._connection_pools:
