@@ -13,7 +13,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db import DatabaseError as WrappedDatabaseError
 from django.db import connections
-from django.db.backends.base.base import BaseDatabaseWrapper
+from django.db.backends.base.base import NO_DB_ALIAS, BaseDatabaseWrapper
 from django.db.backends.utils import CursorDebugWrapper as BaseCursorDebugWrapper
 from django.utils.asyncio import async_unsafe
 from django.utils.functional import cached_property
@@ -202,7 +202,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     @property
     def pool(self):
         pool_options = self.settings_dict["OPTIONS"].get("pool")
-        if pool_options is None or not is_psycopg3:
+        if pool_options is None or self.alias == NO_DB_ALIAS or not is_psycopg3:
             return None
 
         if self.alias not in self._connection_pools:
@@ -525,13 +525,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                     connection.vendor == "postgresql"
                     and connection.settings_dict["NAME"] != "postgres"
                 ):
-                    conn = self.__class__(
-                        {
-                            **self.settings_dict,
-                            "NAME": connection.settings_dict["NAME"],
-                        },
-                        alias=self.alias,
-                    )
+                    settings_dict = self.settings_dict.copy()
+                    # Disable pooling for the no-db cursor
+                    settings_dict["OPTIONS"] = {
+                        **settings_dict.get("OPTIONS", {}),
+                        "pool": False,
+                    }
+                    settings_dict["NAME"] = connection.settings_dict["NAME"]
+                    conn = self.__class__(settings_dict, alias=self.alias)
                     try:
                         with conn.cursor() as cursor:
                             yield cursor
